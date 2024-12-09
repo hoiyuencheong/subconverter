@@ -1,3 +1,20 @@
+
+#include "quickjs/quickjs.h"
+
+namespace qjs {
+
+// Replacement for JS_GetClassID to ensure compatibility and safety.
+inline JSClassID SafeGetClassID(JSValue v) {
+    if (JS_IsObject(v)) {  // Check if the value is a valid JS object
+        void* opaque = JS_VALUE_GET_PTR(v);
+        if (opaque) {
+            return *reinterpret_cast<JSClassID*>(opaque);
+        }
+    }
+    return 0; // Return 0 if the value is not an object or opaque is null
+}
+
+} // namespace qjs
 #pragma once
 
 #include "quickjs/quickjs.h"
@@ -394,7 +411,7 @@ struct js_traits<std::variant<Ts...>>
                     return is_vector<T>::value || is_pair<T>::value;
                 if constexpr (is_shared_ptr<T>::value)
                 {
-                    if(JS_GetClassID(v) == js_traits<T>::QJSClassId)
+                    if(qjs::SafeGetClassID(v) == js_traits<T>::QJSClassId)
                         return true;
                 }
                 return false;
@@ -443,12 +460,12 @@ struct js_traits<std::variant<Ts...>>
             case JS_TAG_FUNCTION_BYTECODE:
                 return unwrapPriority<std::is_function>(ctx, v);
             case JS_TAG_OBJECT:
-                if(auto result = unwrapObj<Ts...>(ctx, v, JS_GetClassID(v)))
+                if(auto result = unwrapObj<Ts...>(ctx, v, qjs::SafeGetClassID(v)))
                 {
                     return *result;
                 }
                 JS_ThrowTypeError(ctx, "Expected type %s, got object with classid %d",
-                                  QJSPP_TYPENAME(std::variant<Ts...>), JS_GetClassID(v));
+                                  QJSPP_TYPENAME(std::variant<Ts...>), qjs::SafeGetClassID(v));
                 break;
 
             case JS_TAG_INT:
@@ -971,7 +988,7 @@ struct js_traits<std::shared_ptr<T>>
         if (JS_IsNull(v)) {
             return ptr;
         }
-        auto obj_class_id = JS_GetClassID(v);
+        auto obj_class_id = qjs::SafeGetClassID(v);
 
         if (obj_class_id == QJSClassId) {
             // The JS object is of class T
@@ -1469,7 +1486,7 @@ public:
         if(!rt)
             throw std::runtime_error{"qjs: Cannot create runtime"};
 
-        JS_SetHostUnhandledPromiseRejectionTracker(rt, promise_unhandled_rejection_tracker, NULL);
+        JS_SetHostPromiseRejectionTracker(rt, promise_unhandled_rejection_tracker, NULL);
         JS_SetModuleLoaderFunc(rt, nullptr, module_loader, nullptr);
     }
 
